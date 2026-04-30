@@ -1,0 +1,79 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    name: Claude Code Review (DeepSeek V4 Pro)
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get PR diff
+        id: diff
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          DIFF=$(git diff origin/${{ github.base_ref }}...HEAD -- . \
+            ':!.github/workflows' ':!*.lock' ':!*.json' ':!*.md' | head -3000)
+          
+          # URL-encode the diff for the comment
+          DIFF_ESCAPED=$(echo "$DIFF" | jq -Rs '.')
+          echo "diff_data=$DIFF_ESCAPED" >> $GITHUB_OUTPUT
+          
+          CHANGED=$(git diff origin/${{ github.base_ref }}...HEAD --name-only | \
+            grep -v '\.github/workflows' | grep -v '\.lock$' | grep -v '\.json$' | grep -v '\.md$')
+          echo "files_changed=$CHANGED" >> $GITHUB_OUTPUT
+
+      - name: AI Code Review
+        id: ai_review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          ANTHROPIC_BASE_URL: https://api.deepseek.com/anthropic
+        run: |
+          DIFF_DATA='${{ steps.diff.outputs.diff_data }}'
+          FILES='${{ steps.diff.outputs.files_changed }}'
+          
+          if [ -z "$FILES" ]; then
+            REVIEW_BODY="🤖 **AI Code Review**\n\nNo source code changes detected (workflows/config/docs only)."
+          else
+            REVIEW_BODY=$(curl -s https://api.deepseek.com/anthropic/v1/messages \
+              -H "Content-Type: application/json" \
+              -H "x-api-key: $ANTHROPIC_API_KEY" \
+              -d "{
+                \"model\": \"deepseek-chat\",
+                \"max_tokens\": 1500,
+                \"system\": \"You are a senior code reviewer. Review the git diff. Be concise. Focus on: bugs, security vulnerabilities, logic errors, race conditions, resource leaks. Ignore: style, formatting, naming. Format your review as markdown. If code looks good, say 'LGTM ✅ No issues found.'\",
+                \"messages\": [
+                  {\"role\": \"user\", \"content\": \"Review this PR diff:\\n\\n$DIFF_DATA\"}
+                ]
+              }" | jq -r '.content[0].text // "⚠️ Review API returned unexpected response"')
+          fi
+          
+          echo "review_body<<EOF" >> $GITHUB_OUTPUT
+          echo "$REVIEW_BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Post review comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `${{ steps.ai_review.outputs.review_body }}`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `## 🤖 Iron Triangle AI Code Review\n\n${body}\n\n---\n*Reviewed by Claude Code (DeepSeek V4 Pro) | Iron Triangle CI*`
+            });
