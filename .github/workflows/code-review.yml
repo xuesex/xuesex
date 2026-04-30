@@ -39,8 +39,8 @@ jobs:
       - name: AI Code Review (no code changes)
         if: steps.diff.outputs.has_code == 'false'
         run: |
-          REVIEW='## 🤖 Iron Triangle AI Code Review\n\nNo source code changes detected (workflows/config/docs only).'
-          echo "review_body=$REVIEW" >> $GITHUB_OUTPUT
+          echo "No source code changes detected (workflows/config/docs only)."
+          touch /tmp/review-body.txt
 
       - name: AI Code Review (with code changes)
         id: ai_review
