@@ -27,7 +27,7 @@ jobs:
             echo "→ Node.js project detected"
             node --version
             npm install --no-audit --no-fund
-            if grep -q '"lint"' package.json; then
+            if jq -e '.scripts.lint' package.json >/dev/null 2>&1; then
               npm run lint
             fi
           fi
@@ -35,14 +35,14 @@ jobs:
           if [ -f requirements.txt ] || [ -f pyproject.toml ]; then
             echo "→ Python project detected"
             python3 --version
-            pip install ruff
-            ruff check . || echo "⚠️  Ruff found issues (non-blocking)"
+            pip install "ruff==0.11.8"
+            ruff check .
           fi
 
           if [ -f go.mod ]; then
             echo "→ Go project detected"
             go version
-            command -v golangci-lint >/dev/null && golangci-lint run || echo "  golangci-lint not installed, skipping"
+            command -v golangci-lint >/dev/null && golangci-lint run || echo "::notice::golangci-lint not installed, skipping"
           fi
 
   # ============================================
@@ -60,13 +60,13 @@ jobs:
           if [ -f package.json ]; then
             echo "→ Node.js tests"
             npm install --no-audit --no-fund
-            npm test 2>/dev/null || echo "⚠️  No test script in package.json"
+            npm test 2>/dev/null || echo "::notice::No test script in package.json"
           fi
 
           if [ -f pyproject.toml ] || [ -f setup.cfg ]; then
             echo "→ Python tests"
-            pip install -e ".[dev,test]" 2>/dev/null || pip install pytest
-            python3 -m pytest -v --tb=short 2>/dev/null || echo "⚠️  No pytest tests found"
+            pip install -e '.[dev,test]' 2>/dev/null || pip install pytest
+            python3 -m pytest -v --tb=short 2>/dev/null || echo "::notice::No pytest tests found"
           fi
 
           if [ -f Makefile ] && grep -q '^test:' Makefile; then
@@ -92,14 +92,14 @@ jobs:
           if [ -f package.json ]; then
             echo "→ npm audit"
             npm install --package-lock-only 2>/dev/null
-            npm audit --audit-level=high || echo "⚠️  npm audit found vulnerabilities"
+            npm audit --audit-level=high || echo "::warning::npm audit found vulnerabilities"
             echo "→ npm outdated"
             npm outdated || true
           fi
 
           # Python
           if [ -f requirements.txt ]; then
-            echo "→ Python requirements.txt (top-level deps only)"
+            echo "→ Python requirements.txt"
             grep -v '^#' requirements.txt | grep -v '^$' | grep -v '^-' | head -20 || true
           fi
 
