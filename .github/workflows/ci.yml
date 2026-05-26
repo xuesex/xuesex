@@ -8,6 +8,12 @@ on:
   schedule:
     - cron: '0 1 * * *'  # 每天 UTC 1:00 = 北京时间 9:00
 
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   # ============================================
   # 代码质量检查
